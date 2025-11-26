@@ -10,3 +10,4 @@ export DB_NAME="change_app_db_name"
 export DB_USER="change_app_username"
 
 export DB_PASS="change_password"
+export STATIC_IP_NAME="flask-static-ip"
