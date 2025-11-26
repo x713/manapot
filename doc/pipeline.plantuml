@@ -1,0 +1,38 @@
+@startuml
+!theme plain
+
+title Cloud Build CI/CD Pipeline
+
+start
+
+:Developer pushes code to GitHub;
+
+:Cloud Build Trigger fires;
+
+partition "Cloud Build Steps" {
+    
+    :<b>Step 1: Build</b>\nDocker build -t flask-app;
+    
+    :<b>Step 2: Push</b>\nPush image to Artifact Registry;
+    
+    partition "Task 8: Database Migration" {
+        note right
+          Data-Driven Approach
+        end note
+        :Start Ephemeral SQL Proxy;
+        :Connect to Cloud SQL (Public IP);
+        :Run <b>'flask db upgrade'</b>;
+        :Insert/Update Data;
+        :Stop Proxy;
+    }
+
+    :<b>Step 3: Update Manifests</b>\nUse 'sed' to inject new Image Tag;
+    
+    :<b>Step 4: Deploy</b>\nkubectl apply -f k8s/;
+}
+
+:GKE Cluster updates Pods;
+:New version is Live;
+
+stop
+@enduml

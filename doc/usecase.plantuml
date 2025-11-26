@@ -1,0 +1,33 @@
+@startuml
+!theme plain
+autonumber
+
+actor "User" as user
+cloud "Google Cloud Platform" {
+    
+    component "Cloud Load Balancer\n(Ingress Static IP)" as ingress
+    
+    package "Kubernetes Cluster (GKE)" {
+        component "Service\n(NodePort)" as service
+        
+        node "Pod" {
+            component "Flask App\n(Container)" as flask
+            component "Cloud SQL Proxy\n(Sidecar Container)" as proxy
+            
+            note right of proxy
+              Listens on localhost:5432
+              Task 6 Requirement
+            end note
+        }
+    }
+    
+    database "Cloud SQL\n(PostgreSQL)" as db
+}
+
+user -> ingress : 1. HTTP Request
+ingress -> service : 2. Route traffic
+service -> flask : 3. Forward to App
+flask -> proxy : 4. SQL Query (connect to localhost)
+proxy <-> db : 5. Encrypted Tunnel (Private IP)
+
+@enduml
