@@ -93,5 +93,4 @@ coverage.xml
 .flaskenv
 *.env
 secrets.py
-config.py # Если он содержит секретные ключи и не предназначен для репозитория
 
