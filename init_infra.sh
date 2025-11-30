@@ -16,19 +16,33 @@ source .gcpenv
 # Ensure gcloud uses the correct project ID from config
 gcloud config set project "$PROJECT_ID"
 
-# Prevent envsubst from replacing $COMMIT_SHA (needed for Cloud Build)
-export COMMIT_SHA='$COMMIT_SHA'
-
 echo "--- Generating Configuration Files from Templates ---"
 mkdir -p k8s
 
-# Generate Kubernetes manifests from templates
+# --- CRITICAL FIX: Variable Substitution Logic ---
+# 1. We need to prevent envsubst from replacing $COMMIT_SHA (it exists only during build time).
+export COMMIT_SHA='$COMMIT_SHA'
+
+# 2. We need to prevent envsubst from replacing $DB_PASS in cloudbuild.yaml.
+# Cloud Build must fetch the password from Secret Manager at runtime using '$$DB_PASS'.
+# However, we DO need the real password for K8s secrets and Cloud SQL creation.
+
+# Save the real password
+REAL_DB_PASS=$DB_PASS
+
+# Set placeholder for Cloud Build generation
+export DB_PASS='$$DB_PASS'
+
+# Generate Cloud Build configuration (contains $$DB_PASS)
+envsubst < templates/cloudbuild.yaml > cloudbuild.yaml
+
+# Restore the real password for the rest of the script
+export DB_PASS=$REAL_DB_PASS
+
+# Generate Kubernetes manifests (contains real DB_PASS in base64 encoded secret via kubectl later)
 envsubst < templates/deployment.yaml > k8s/deployment.yaml
 envsubst < templates/service.yaml > k8s/service.yaml
 envsubst < templates/ingress.yaml > k8s/ingress.yaml
-
-# Generate Cloud Build configuration
-envsubst < templates/cloudbuild.yaml > cloudbuild.yaml
 
 echo "--- Configuration generated in k8s/ and cloudbuild.yaml ---"
 
@@ -107,24 +121,32 @@ kubectl create secret generic db-credentials \
 
 # --- IAM Permissions ---
 
-echo "--- Configuring IAM Permissions for Cloud Build ---"
-# Get Project Number (required for Service Account email)
+echo "--- Configuring IAM Permissions ---"
+# Get Project Number
 PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
+
+# Define Service Accounts
+# 1. Default Cloud Build SA
 CB_SA="serviceAccount:${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com"
+# 2. Default Compute SA (sometimes used by Cloud Build by default)
+COMPUTE_SA="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
 
-# 1. Allow reading secrets (to access DB password)
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-    --member="$CB_SA" \
-    --role=roles/secretmanager.secretAccessor > /dev/null
+# Helper function to grant roles
+grant_role() {
+    gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="$1" --role="$2" > /dev/null
+}
 
-# 2. Allow Cloud SQL connection (for migrations)
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-    --member="$CB_SA" \
-    --role=roles/cloudsql.client > /dev/null
+echo "Granting roles to Service Accounts..."
 
-# 3. Allow GKE deployment (for kubectl apply)
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-    --member="$CB_SA" \
-    --role=roles/container.developer > /dev/null
+# Loop through both service accounts to ensure permissions are set correctly
+for SA in $CB_SA $COMPUTE_SA; do
+    echo "Configuring $SA..."
+    # Allow reading secrets (to access DB password)
+    grant_role $SA "roles/secretmanager.secretAccessor"
+    # Allow Cloud SQL connection (for migrations)
+    grant_role $SA "roles/cloudsql.client"
+    # Allow GKE deployment (for kubectl apply)
+    grant_role $SA "roles/container.developer"
+done
 
 echo "--- Infrastructure Setup Complete ---"
