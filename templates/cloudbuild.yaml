@@ -27,7 +27,7 @@ steps:
       # IMPORTANT:form URL and run Flask in one Bash command.
       # Bash takes $DB_PASS and use Pass here.
       # IMPORTANT: Use of two dollars hardcoded here for reasons $$DB_PASS
-      - 'DATABASE_URL=postgresql://${DB_USER}:$$DB_PASS@/${DB_NAME}?host=/cloudsql/${PROJECT_ID}:${REGION}:${SQL_INSTANCE_NAME} flask db upgrade'
+      - 'DATABASE_URL=postgresql://${DB_USER}:${DB_PASS}@/${DB_NAME}?host=/cloudsql/${PROJECT_ID}:${REGION}:${SQL_INSTANCE_NAME} flask db upgrade'
     secretEnv: ['DB_PASS']
 
   # 5. Deploy
