@@ -1,0 +1,56 @@
+# 1. Preparaions
+# Clone repo for templating
+
+git clone {$ghrepo} demo-project
+cd demo-project
+
+# reset git history
+rm -rf .git
+git init
+git branch -M main
+
+# 2. Edit sample_vars with your values
+# copy sample_vars.sh to .gcpenv
+#if file .gcpenv not found
+if [ ! -f .gcpenv ]; then
+    cp sample_vars.sh .gcpenv
+
+# 3. Manual steps
+# 3.1 GCP Infrastructure
+# create infrastructure ( ./init_infra.sh )
+./init_infra.sh
+
+# 3.2 Database Migration setup
+# if no migration folder
+flask db init
+# generate migration file
+flask db migrate -m "Initial structure and data"
+
+# go to migrations/versions/xxxx_Initial_structure_and_data.py.
+# edit def upgrade(): 
+# insert  op.execute("INSERT ...") with data.
+
+# 3.3 GitHub repo setup
+# Create new repo at GitHub with 'demo-project' (empty project).
+# bind local folder:
+git remote add origin https://github.com/${ghuser}/demo-project.git
+
+# 3.4 Cloud BUild Setup
+# Go to Cloud Build Console -> Triggers.
+# Create new trigger.
+# Source : NEW repo demo-project.
+# Config : Autodetected (cloudbuild.yaml).
+
+
+# 4: Launch (The Push)
+git add .
+git commit -m "Initial commit: Infra, App and Data Migration"
+git push -u origin main
+
+# 5. Final
+# Goto Cloud Build: "Build started".
+# Logs : Build Docker — OK.
+# Migration (exec-wrapper) — OK (db filled with data).
+# Deploy — OK.
+# Goto : Network Services -> Load Balancing, copy IP.
+# Open browser at IP and port — check flask http server with db data.
