@@ -14,21 +14,20 @@ steps:
       - '-c'
       - |
         sed -i "s|:latest|:$COMMIT_SHA|g" k8s/deployment.yaml
-
-  # 4. Migrate
+# 4. Migrate (Fix: Use bash to expand DB_PASS variable)
   - name: 'gcr.io/google-appengine/exec-wrapper'
     args:
       - '-i'
       - '${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}/${IMAGE_NAME}:$COMMIT_SHA'
       - '-s'
       - '${PROJECT_ID}:${REGION}:${SQL_INSTANCE_NAME}'
-      - '-e'
-      # IMPORTANT: Use of two dollars hardcoded here for reasons $$DB_PASS
-      - 'DATABASE_URL=postgresql://${DB_USER}:$$DB_PASS@127.0.0.1:5432/${DB_NAME}'
       - '--'
-      - 'flask'
-      - 'db'
-      - 'upgrade'
+      - 'bash'
+      - '-c'
+      # IMPORTANT:form URL and run Flask in one Bash command.
+      # Bash takes $DB_PASS and use Pass here.
+      # IMPORTANT: Use of two dollars hardcoded here for reasons $$DB_PASS
+      - 'DATABASE_URL=postgresql://${DB_USER}:$$DB_PASS@/${DB_NAME}?host=/cloudsql/${PROJECT_ID}:${REGION}:${SQL_INSTANCE_NAME} flask db upgrade'
     secretEnv: ['DB_PASS']
 
   # 5. Deploy
