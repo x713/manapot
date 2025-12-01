@@ -1,93 +1,93 @@
 steps:
-# 1. Build Docker image (Tags latest and SHA)
+# 1. Build Docker image (Tag with latest and SHA)
+# $REGION, $PROJECT_ID, etc., are fully substituted by the shell script's envsubst.
+# __COMMIT_SHA_PH__ is replaced by the literal $COMMIT_SHA by the init_infra.sh script.
 - name: 'gcr.io/cloud-builders/docker'
   id: 'build-image'
   args: 
     - 'build'
     - '-t'
-    - '${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}/${IMAGE_NAME}:latest'
+    - '$REGION-docker.pkg.dev/$PROJECT_ID/$REPO_NAME/$IMAGE_NAME:latest'
     - '-t'
-    - '${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}/${IMAGE_NAME}:__COMMIT_SHA_PLACEHOLDER__' # Placeholder will be replaced by init_infra.sh with ${COMMIT_SHA}
+    - '$REGION-docker.pkg.dev/$PROJECT_ID/$REPO_NAME/$IMAGE_NAME:__COMMIT_SHA_PH__' # Placeholder for dynamic substitution
     - '.'
 
 # 2. Push the latest tag 
 - name: 'gcr.io/cloud-builders/docker'
   id: 'push-latest'
-  args: ['push', '${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}/${IMAGE_NAME}:latest']
+  args: ['push', '$REGION-docker.pkg.dev/$PROJECT_ID/$REPO_NAME/$IMAGE_NAME:latest']
 
 # 3. Push the SHA tag 
 - name: 'gcr.io/cloud-builders/docker'
   id: 'push-sha'
-  args: ['push', '${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}/${IMAGE_NAME}:__COMMIT_SHA_PLACEHOLDER__']
+  args: ['push', '$REGION-docker.pkg.dev/$PROJECT_ID/$REPO_NAME/$IMAGE_NAME:__COMMIT_SHA_PH__']
   
-# 4. Update K8s Manifests (using COMMIT_SHA)
+# 4. Update K8s Manifests 
 - name: 'ubuntu'
   id: 'update-manifests'
   entrypoint: 'bash'
   args:
     - '-c'
     - |
-      # Replace the ':latest' placeholder in K8s deployment.yaml with the literal ${COMMIT_SHA}
-      sed -i "s|:latest|\\\${COMMIT_SHA}|g" k8s/deployment.yaml
+      # Replace the image tag placeholder in deployment.yaml with the literal $COMMIT_SHA.
+      # Escaping is required for sed to insert the literal $ into the file.
+      sed -i "s|__IMAGE_TAG_PLACEHOLDER__|\\\$$COMMIT_SHA|g" k8s/deployment.yaml
 
-# 5. Database Migration (Fixes wget/chmod parsing errors by hardcoding paths)
-- name: '${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}/${IMAGE_NAME}:__COMMIT_SHA_PLACEHOLDER__' 
+# 5. Cloud SQL Proxy Runner Service (FIXED: using correct positional args and flags)
+- name: 'gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.1.0' 
+  id: 'sql-proxy-runner'
+  args:
+    # CRITICAL FIX 1: The instance connection string is a positional argument, not a flag.
+    # The '=tcp:5432' part correctly maps the listener port.
+    - '$PROJECT_ID:$REGION:$SQL_INSTANCE_NAME=tcp:5432'
+    # CRITICAL FIX 2: Use the single correct flag for private IP connectivity in v2.x.
+    - '--private-ip' 
+    - '-term_timeout=10s' # Keep the existing timeout flag
+  waitFor: ['-'] 
+
+# 6. Database Migration Step (Using 'docker run' for reliable execution)
+# NOTE: This step still requires a shell (`/bin/bash`) which is why it uses 
+# the full Docker image and wraps the execution.
+- name: 'gcr.io/cloud-builders/docker' 
   id: 'migrate-db'
   entrypoint: '/bin/bash'
   args:
     - '-c'
     - |
-      set -e # Exit immediately if a command exits with a non-zero status.
+      set -e
+      # The image tag now correctly relies on Cloud Build substitution
+      IMAGE_URL="$REGION-docker.pkg.dev/$PROJECT_ID/$REPO_NAME/$IMAGE_NAME:__COMMIT_SHA_PH__"
+      DB_URL="postgresql://$DB_USER:$DB_PASS@sql-proxy-runner:5432/$DB_NAME"
       
-      PROXY_PATH="/workspace/cloud-sql-proxy"
-      SQL_INSTANCE="${PROJECT_ID}:${REGION}:${SQL_INSTANCE_NAME}"
+      # Execute the migration command inside the built container image.
+      /usr/bin/docker run --rm \
+        --network=cloudbuild \
+        -v /var/run/docker.sock:/var/run/docker.sock \
+        -e DATABASE_URL="${DB_URL}" \
+        "${IMAGE_URL}" \
+        /bin/bash -c "cd /app && flask db upgrade"
+  secretEnv: ['DB_PASS']
+  waitFor: ['sql-proxy-runner', 'push-sha'] 
 
-      # 1. Fetch the Cloud SQL Proxy binary (Hardcoded path in -O to prevent bash errors)
-      wget -q https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.1.0/cloud-sql-proxy.linux.amd64 -O ${PROXY_PATH}
-      
-      # 2. Make it executable
-      chmod +x ${PROXY_PATH}
-      
-      # 3. Start the proxy in the background (&) using the Private IP flag.
-      ${PROXY_PATH} \
-        --private-ip \
-        ${SQL_INSTANCE} &
-      
-      # 4. Wait for the Unix socket to be ready.
-      sleep 5
-      
-      # 5. Set DATABASE_URL using the Unix socket path and the password from secretEnv.
-      export DATABASE_URL="postgresql://${DB_USER}:${DB_PASS}@/${DB_NAME}?host=/cloudsql/${SQL_INSTANCE}"
-      
-      # 6. Run the migration command.
-      flask db upgrade
-  secretEnv: ['DB_PASS'] # Required to receive the DB_PASS environment variable
-
-# 6. Deploy to GKE (Split into two steps for clarity and reliability)
+# 7. Deploy to GKE: Authenticate
 - name: 'gcr.io/cloud-builders/gcloud'
   id: 'gke-auth'
-  args: ['container', 'clusters', 'get-credentials', '${CLUSTER_NAME}', '--zone', '${ZONE}', '--project', '${PROJECT_ID}']
+  args: ['container', 'clusters', 'get-credentials', '$CLUSTER_NAME', '--zone', '$ZONE', '--project', '$PROJECT_ID']
+  
+# 8. Deploy to GKE: Apply Manifests
 - name: 'gcr.io/cloud-builders/kubectl'
   id: 'kubectl-apply'
   args: ['apply', '-f', 'k8s/']
   env:
-    - 'CLOUDSDK_COMPUTE_ZONE=${ZONE}'
-    - 'CLOUDSDK_CONTAINER_CLUSTER=${CLUSTER_NAME}'
+    - 'CLOUDSDK_COMPUTE_ZONE=$ZONE'
+    - 'CLOUDSDK_CONTAINER_CLUSTER=$CLUSTER_NAME'
 
 # --- Secret Manager Configuration ---
 availableSecrets:
   secretManager:
-  - versionName: projects/${PROJECT_ID}/secrets/sql-password/versions/latest
+  - versionName: projects/$PROJECT_ID/secrets/sql-password/versions/latest
     env: 'DB_PASS'
 
 # --- Logging Option ---
 options:
   logging: CLOUD_LOGGING_ONLY
-
-# --- SUBSTITUTIONS BLOCK ---
-substitutions:
-  _DB_NAME: ${DB_NAME}
-  _DB_USER: ${DB_USER}
-  _SQL_INSTANCE_NAME: ${SQL_INSTANCE_NAME}
-  _CLUSTER_NAME: ${CLUSTER_NAME}
-  _REPO_NAME: ${REPO_NAME}

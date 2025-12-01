@@ -14,29 +14,19 @@ gcloud config set project "$PROJECT_ID"
 echo "--- Generating Configuration Files ---"
 mkdir -p k8s
 
-
 # --- SECURE SUBSTITUTION LOGIC ---
 
 # 1. Generate Cloud Build config
-# NOTE: Логика COMMIT_SHA удалена. Используем envsubst для подстановки основных переменных.
+# Step A: Use envsubst to substitute all standard shell variables (like $REGION, $PROJECT_ID).
+# We use a unique non-shell placeholder (__COMMIT_SHA_PH__) for the Cloud Build variable.
 envsubst < templates/cloudbuild.yaml > cloudbuild.yaml
 
-# Restore REAL password for K8s manifests
-# (DB_PASS остается в среде и используется для K8s и SQL)
-# --- K8S SECRET VARIABLE GENERATION ---
+# Step B: Use sed to replace the unique placeholder with the literal Cloud Build variable $COMMIT_SHA.
+# CRITICAL FIX: The robust approach to inject a literal '$' followed by COMMIT_SHA.
+sed -i 's|__COMMIT_SHA_PH__|'"$"'COMMIT_SHA|g' cloudbuild.yaml
 
-# 1. Define the correct DATABASE_URL format for Kubernetes Pods.
-# The Flask application must connect to 127.0.0.1:5432, 
-# where the Cloud SQL Proxy sidecar is listening.
-K8S_DB_URL="postgresql://${DB_USER}:${DB_PASS}@127.0.0.1:5432/${DB_NAME}"
 
-# 2. Base64-encode the URL for the Kubernetes secret.
-# This variable will be used by envsubst to populate k8s/secret.yaml.
-BASE64_K8S_DB_URL=$(echo -n "${K8S_DB_URL}" | base64)
-
-# --- GENERATE K8s FILES ---
-
-# Generate K8s files (They must contain the real password for kubectl to apply secrets)
+# 2. Generate K8s files (They must contain the real password for kubectl to apply secrets)
 envsubst < templates/deployment.yaml > k8s/deployment.yaml
 envsubst < templates/service.yaml > k8s/service.yaml
 envsubst < templates/ingress.yaml > k8s/ingress.yaml
@@ -52,7 +42,7 @@ gcloud services enable artifactregistry.googleapis.com container.googleapis.com 
 gcloud services enable servicenetworking.googleapis.com
 
 # NEW IDEMPOTENCY CHECK: Check if the required VPC peering address range exists 
-# before creating it. This replaces the unsupported --if-not-exists flag.
+# before creating it.
 if ! gcloud compute addresses describe google-managed-services-default --global > /dev/null 2>&1; then
     gcloud compute addresses create google-managed-services-default \
         --global \
@@ -63,7 +53,6 @@ if ! gcloud compute addresses describe google-managed-services-default --global 
 fi
 
 # CRITICAL FIX 2: Create the VPC Peering connection itself.
-# This connection allows the VPC network 'default' to talk to Google's service network.
 if ! gcloud services vpc-peerings describe servicenetworking-googleapis-com --network=default > /dev/null 2>&1; then
     gcloud services vpc-peerings connect \
         --service=servicenetworking.googleapis.com \
@@ -90,7 +79,6 @@ if ! gcloud sql instances describe "$SQL_INSTANCE_NAME" > /dev/null 2>&1; then
     echo "Creating Cloud SQL instance with PRIVATE IP..."
     
     # CRITICAL: Since Private IP creation is idempotent, we just run the create command
-    # using the corrected private access flag.
     gcloud sql instances create "$SQL_INSTANCE_NAME" \
         --database-version=POSTGRES_13 \
         --cpu=1 --memory=4GB \
@@ -109,8 +97,9 @@ if ! gcloud container clusters describe "$CLUSTER_NAME" --zone "$ZONE" > /dev/nu
     gcloud container clusters create "$CLUSTER_NAME" --zone "$ZONE" --num-nodes 1 --scopes=cloud-platform
 fi
 
-# K8s Secrets (Uses the real DB_PASS)
+# K8s Secrets
 gcloud container clusters get-credentials "$CLUSTER_NAME" --zone "$ZONE"
+# Streamlined secret creation using --from-literal for clarity and robustness
 kubectl create secret generic db-credentials \
     --from-literal=database_url="postgresql://${DB_USER}:${DB_PASS}@127.0.0.1:5432/${DB_NAME}" \
     --dry-run=client -o yaml | kubectl apply -f -

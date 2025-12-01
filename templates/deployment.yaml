@@ -1,6 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  # Using the name you provided
   name: flask-app
 spec:
   replicas: 1
@@ -12,11 +13,16 @@ spec:
       labels:
         app: flask-app
     spec:
+      # CRITICAL: This ServiceAccount is required for the Cloud SQL Proxy to authenticate
+      # using Workload Identity/IAM roles.
+      serviceAccountName: gke-sa
       containers:
       # Application
       - name: web
-        # Обрати внимание: переменные bash стиля
-        image: ${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}/${IMAGE_NAME}:latest
+        # CRITICAL FIX: Replaced ':latest' with the placeholder
+        # '__IMAGE_TAG_PLACEHOLDER__'. This allows Cloud Build (in Step 4)
+        # to inject the unique commit SHA for reliable deployments.
+        image: $REGION-docker.pkg.dev/$PROJECT_ID/$REPO_NAME/$IMAGE_NAME:__IMAGE_TAG_PLACEHOLDER__
         ports:
         - containerPort: 5000
         env:
@@ -25,11 +31,34 @@ spec:
             secretKeyRef:
               name: db-credentials
               key: database_url
+        - name: SECRET_KEY # Ensure the application's secret key is set
+          value: "$SECRET_KEY"
+        
+        # Added K8s health checks for stability and zero-downtime rolling updates
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 5000
+          initialDelaySeconds: 10
+          periodSeconds: 15
+          
       # Sidecar Proxy
       - name: cloud-sql-proxy
+        # Using the correct and current image path you provided
         image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.1.0
         args:
           - "--private-ip"
-          - "${PROJECT_ID}:${REGION}:${SQL_INSTANCE_NAME}"
+          - "$PROJECT_ID:$REGION:$SQL_INSTANCE_NAME" # Using $ for envsubst compatibility
         securityContext:
           runAsNonRoot: true
+          # Added stricter security settings for the proxy container
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
