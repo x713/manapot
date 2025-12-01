@@ -13,7 +13,7 @@ def index():
     if not user:
         user = {'nickname': 'Guest'}
 
-    # Получаем все посты
+    # Get all posts
     posts = Post.query.all()
 
     return render_template('index.html',
