@@ -15,7 +15,7 @@ steps:
       - |
         sed -i "s|:latest|:$COMMIT_SHA|g" k8s/deployment.yaml
 
- # 4. Migrate
+# 4. Migrate (Final: Bash interpolation into URL)
   - name: 'gcr.io/google-appengine/exec-wrapper'
     args:
       - '-i'
@@ -25,12 +25,12 @@ steps:
       - '--'
       - 'bash'
       - '-c'
-      # Here we use ${DB_PASS}. 
-      # init_infra.sh will replace it with $$DB_PASS (double dollars).
-      # Cloud Build will interpret $$ as a literal $ for Bash.
-      - 'export PGPASSWORD=${DB_PASS}; DATABASE_URL=postgresql://${DB_USER}@/${DB_NAME}?host=/cloudsql/${PROJECT_ID}:${REGION}:${SQL_INSTANCE_NAME} flask db upgrade'
+      # ВАЖНО: 
+      # 1. We use  $$DB_PASS (Cloud Build turns it inot $DB_PASS).
+      # 2. We use double qoutes "", so Bash will real password instead of $DB_PASS .
+      - 'DATABASE_URL="postgresql://${DB_USER}:$$DB_PASS@/${DB_NAME}?host=/cloudsql/${PROJECT_ID}:${REGION}:${SQL_INSTANCE_NAME}" flask db upgrade'
     secretEnv: ['DB_PASS']
-
+    
   # 5. Deploy
   - name: 'gcr.io/cloud-builders/gcloud'
     args: ['container', 'clusters', 'get-credentials', '${CLUSTER_NAME}', '--zone', '${ZONE}', '--project', '${PROJECT_ID}']
