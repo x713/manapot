@@ -17,7 +17,7 @@ Find your project ID (if forgot):
     --location="$REGION" --description="Docker repository"
 
 # Build and push image
-> gcloud builds submit --tag "$REGION"-docker.pkg.dev/${PROJECT_ID}/$REPO_NAME/$IMAGE_NAME:tag1
+> gcloud builds submit --tag "$REGION"-docker.pkg.dev/${PROJECT_ID}/$REPO_NAME/$IMAGE_NAME:latest . 
 
 --- step 2 : Cloud SQL ---
 # Create SQL DB
