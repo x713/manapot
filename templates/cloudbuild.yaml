@@ -30,14 +30,9 @@ steps:
   args:
     - '-c'
     - |
-      mkdir -p k8s
-      # Substitute the latest commit SHA into the deployment template
-      sed "s|__IMAGE_TAG_PLACEHOLDER__|__COMMIT_SHA__|g" templates/deployment.yaml > k8s/deployment.yaml
-      
-      # Substitute other variables into service and ingress (no SHA needed)
-      envsubst < templates/service.yaml > k8s/service.yaml
-      envsubst < templates/ingress.yaml > k8s/ingress.yaml
-  waitFor: ['push-sha']
+      # Modify the existing k8s/deployment.yaml (committed by user)
+      # We only need to swap the image tag placeholder with the actual Commit SHA.
+      sed -i "s|__IMAGE_TAG_PLACEHOLDER__|__COMMIT_SHA__|g" k8s/deployment.yaml
   
 # 4. Database Migration (Runs the provided migrate.sh script inside the built container)
 - name: '$REGION-docker.pkg.dev/$PROJECT_ID/$REPO_NAME/$IMAGE_NAME:__COMMIT_SHA__'
