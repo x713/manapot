@@ -41,11 +41,15 @@ Find your project ID (if forgot):
 
 # Cleanup
 # kubectl delete deployment $APP_NAME
-# Deploy app
-> kubectl create deployment $APP_NAME \
+# Deploy app by usuing template from k8s/deployment.yaml
+# kubectl create deployment $APP_NAME \
   --image="$REGION"-docker.pkg.dev/${PROJECT_ID}/$REPO_NAME/$IMAGE_NAME:tag1 \
   --replicas=2
 
+# If no tag change
+> sed -i 's/__IMAGE_TAG_PLACEHOLDER__/tag1/g' k8s/deployment.yaml
+
+> kubectl apply -f k8s/
 > kubectl get deployments
 > kubectl get pods
 
@@ -65,6 +69,12 @@ Find your project ID (if forgot):
 > kubectl apply -f k8s/service.yaml
 > kubectl apply -f k8s/ingress.yaml
 
+# update image tag
+# if manually updated
+# sed -i 's/__IMAGE_TAG_PLACEHOLDER__/tag1/g' k8s/deployment.yaml
+> kubectl apply -f k8s/deployment.yaml
+# kubectl apply -f k8s/
+
 --- step 6 : Connect to Database ---
 # Connect to Database using Cloud SQL Auth Proxy:
 # Create a Cloud SQL Database with a private IP address. (init_infra.sh)
@@ -81,9 +91,8 @@ Find your project ID (if forgot):
 > edit migrations/versions/xxx.py
 > ./migrate.sh
 # if manually updated
-# sed -i 's/__IMAGE_TAG_PLACEHOLDER__/tag1/g' k8s/deployment.yaml
 > kubectl apply -f k8s/deployment.yaml
-# kubectl apply -f k8s/
+
 
 --- step 8 : Automate SQL migration scripts ---
 # Create a pipeline in Cloud Build to apply database migration scripts.

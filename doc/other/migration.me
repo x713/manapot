@@ -1,0 +1,39 @@
+# Database Migrations Guide
+
+## 1. Initial Setup (One time)
+*Assumming infrastructure (Cloud SQL) is ready via `init_infra.sh`.*
+
+1. **Generate Initial Migration**:
+   Run the local helper script. It will initialize the `migrations/` folder (if missing) and create the first migration file based on your `models.py`.
+   ```bash
+   ./generate_local_migration.sh
+   ```
+
+2. **Deploy**:
+   Commit and push. Cloud Build will apply this migration to the real database.
+   ```bash
+   git add .
+   git commit -m "Initial DB schema"
+   git push
+   ```
+
+## 2. Making Changes (Daily Workflow)
+When you modify `models.py` (e.g. add a new column):
+
+1. **Generate Migration**:
+   Run the script again. It will connect to the DB via proxy, detect changes, and generate a new version file.
+   ```bash
+   ./generate_local_migration.sh
+   ```
+
+2. **Verify**:
+   Check the new file created in `migrations/versions/`. Ensure it looks correct.
+
+3. **Apply**:
+   Commit and push. The CI/CD pipeline (`migrate.sh`) will apply the changes automatically.
+   ```bash
+   git add .
+   git commit -m "feat: Update database schema"
+   git push
+   ```
+

@@ -115,7 +115,7 @@ kubectl create serviceaccount $SERVICE_ACCOUNT_NAME --dry-run=client -o yaml | k
 
 # Create DB Credentials Secret
 kubectl create secret generic db-credentials \
-    --from-literal=database_url="postgresql://${DB_USER}:${DB_PASS}@127.0.0.1:5432/${DB_NAME}" \
+    --from-literal=database_url="postgresql+psycopg2://${DB_USER}:${DB_PASS}@127.0.0.1:5432/${DB_NAME}" \
     --dry-run=client -o yaml | kubectl apply -f -
 
 echo "=========================================="

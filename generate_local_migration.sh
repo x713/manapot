@@ -39,7 +39,7 @@ done
 
 # 3. Configure Local Environment
 # Override the URL to use localhost for this script only
-export DATABASE_URL="postgresql://$DB_USER:$DB_PASS@127.0.0.1:5432/$DB_NAME"
+export DATABASE_URL="postgresql+psycopg2://$DB_USER:$DB_PASS@127.0.0.1:5432/$DB_NAME"
 
 # 4. Generate Files
 echo "--- Initializing Migrations ---"
