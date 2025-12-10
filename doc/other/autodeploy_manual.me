@@ -23,13 +23,15 @@ fi
 # 3. Manual steps
 # 3.1 GCP Infrastructure
 # create infrastructure ( ./init_infra.sh )
+# create infrastructure ( ./init_infra.sh )
 ./init_infra.sh
 
+# Generate configs and manifests from templates
+./gen_infra.sh
+
 # 3.2 Database Migration setup
-# if no migration folder
-flask db init
-# generate migration file
-flask db migrate -m "Initial structure and data"
+# Use the helper script to connect to Cloud SQL and generate the migration
+./generate_local_migration.sh
 
 # go to migrations/versions/xxxx_Initial_structure_and_data.py.
 # edit def upgrade(): 
