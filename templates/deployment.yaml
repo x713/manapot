@@ -17,7 +17,7 @@ spec:
             
       containers:
       # Main Application Container
-      - name: web
+      - name: $APP_NAME-web
         # Image tag is set by envsubst in init_infra.sh, using the Cloud Build variable ($COMMIT_SHA).
         image: $REGION-docker.pkg.dev/$PROJECT_ID/$REPO_NAME/$IMAGE_NAME:__IMAGE_TAG_PLACEHOLDER__
         ports:
@@ -34,7 +34,7 @@ spec:
         # Health Checks for reliable service management
         livenessProbe:
           httpGet:
-            path: /
+            path: /healthz
             port: 5000
           initialDelaySeconds: 5
           periodSeconds: 10
@@ -55,6 +55,7 @@ spec:
         image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.1.0
         args:
           - "--private-ip" # Use private IP for GKE-to-SQL communication
+          - "--port=5432"
           # Instance connection name is substituted by envsubst in init_infra.sh
           - "$PROJECT_ID:$REGION:$SQL_INSTANCE_NAME"
         securityContext:

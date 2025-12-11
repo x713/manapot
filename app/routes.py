@@ -21,3 +21,6 @@ def index():
                            user=user,
                            posts=posts)
 
+@app.route('/healthz')
+def healthz():
+    return "OK", 200
